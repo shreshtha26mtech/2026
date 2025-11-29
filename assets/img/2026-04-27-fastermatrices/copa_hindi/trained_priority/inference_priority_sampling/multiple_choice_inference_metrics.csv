@@ -1,0 +1,2 @@
+total_inference_time_s,avg_batch_time_s,samples_per_second,emissions_kg_co2,accuracy,avg_peak_memory_gb,total_samples
+0.5023214817047119,0.017321430403610755,893.8498876779935,2.511994999749526e-05,0.49443207126948774,0.640023083522402,449
