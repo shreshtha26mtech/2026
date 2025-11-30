@@ -47,7 +47,7 @@ toc:
 # Below is an example of injecting additional post-specific styles.
 # This is used in the 'Layouts' section of this post.
 # If you use this post as a template, delete this _styles block.
-_styles: >
+_styles: |
   .fake-img {
     background: #bbb;
     border: 1px solid rgba(0, 0, 0, 0.1);
@@ -61,6 +61,42 @@ _styles: >
     margin: 12px 0;
     text-align: center;
     font-size: 16px;
+  }
+  /* --- New Grid Layouts --- */
+  .layout-seq, .layout-3-2 {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 20px;
+  }
+  .layout-seq > div, .layout-3-2 > div {
+    text-align: center;
+    min-width: 150px;
+  }
+  .layout-seq img, .layout-3-2 img {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+    border-radius: 4px;
+  }
+  .layout-seq p, .layout-3-2 p {
+    font-family: monospace;
+    font-size: 0.9em;
+    color: #666;
+    margin-top: 5px;
+    text-align: center;
+  }
+  /* 5 items in a row */
+  .layout-seq > div {
+    flex: 1 1 18%;
+  }
+  /* 3 top, 2 bottom */
+  .layout-3-2 > div:nth-child(-n+3) {
+    flex: 1 1 30%;
+  }
+  .layout-3-2 > div:nth-child(n+4) {
+    flex: 1 1 45%;
   }
 ---
 
@@ -174,124 +210,7 @@ The **Linformer** relies on the low-rank property of the attention matrix [Wang 
 
 **Matrix Product Sketching via Coordinated Sampling** proposes estimating the product $\mathbf{Q}\mathbf{K}^\top$ directly using coordinated random sampling [Daliri et al., 2025]. Unlike traditional linear sketching (such as Johnson-Lindenstrauss projections) which can be inefficient for sparse data, coordinated sampling (specifically Priority Sampling) selects rows from $\mathbf{Q}$ and $\mathbf{K}$ based on their norms using a shared random seed.
 
-We have used several of these aforementioned algorithms to approximate transformers and see how these perform against Indic Language datasets for various tasks. The goal here is not to come up with a one-size-fits-all solution but rather to find out how each of these perform in practice and the pitfalls (if any) for several of these algorithms.
-
----
-
-####  Learned Sketch
-
-The Linformer is based on the **Low-Rank Approximation** of the attention matrix. Instead of a full $N \times N$ interaction, it assumes that the self-attention mechanism can be approximated by projecting the Key ($\mathbf{K}$) and Value ($\mathbf{V}$) matrices into a lower-dimensional space [Wang et al., 2020].
-
-We define two learned projection matrices, $\mathbf{E} \in \mathbb{R}^{k \times N}$ and $\mathbf{F} \in \mathbb{R}^{k \times N}$, where $k \ll N$. These matrices project the high-dimensional sequence length $N$ down to a compressed dimension $k$.
-$$\mathbf{K}_{proj} = \mathbf{E}\mathbf{K}, \quad \mathbf{V}_{proj} = \mathbf{F}\mathbf{V}$$
-
-```latex
-Input: Q (N x d), K (N x d), V (N x d)
-Parameters: E, F (Learned Projections)
-
-1. Compress Keys and Values:
-   K_proj = E * K   // Result: (k x d)
-   V_proj = F * V   // Result: (k x d)
-
-2. Compute Attention Scores:
-   Scores = (Q * K_proj^T) / sqrt(d)   // Result: (N x k)
-
-3. Compute Probabilities:
-   Weights = Softmax(Scores)
-
-4. Compute Context:
-   Output = Weights * V_proj   // Result: (N x d)
-```
-
----
-
-#### LevAttention 
-
-LevAttention uses **Statistical Leverage Scores** to identify the most "influential" keys in the sequence. These scores measure how much a specific row of $\mathbf{K}$ exerts influence on the solution of a linear regression problem involving $\mathbf{K}$. High leverage indicates a key that is unique or critical to the subspace [Kannan et al., 2024].
-
-For a matrix $\mathbf{K} \in \mathbb{R}^{N \times d}$, the leverage score $\tau_i$ of the $i$-th row $\mathbf{k}_i$ is defined as:
-$$\tau_i(\mathbf{K}) = \mathbf{k}_i (\mathbf{K}^\top \mathbf{K} + \lambda \mathbf{I})^{-1} \mathbf{k}_i^\top$$
-where $\lambda$ is a small damping factor for stability.
-
-```latex
-Input: K (N x d), budget k, regularization lambda
-
-1. Compute Gram Matrix:
-   G = K^T * K + lambda * I
-
-2. Compute Leverage Scores for each row i:
-   tau_i = K_i * G^(-1) * K_i^T
-
-3. Identify Universal Set U:
-   U = {indices of the top-k largest tau_i}
-
-4. Create Mask M:
-   M_{ij} = 0 if j in U else -infinity
-
-5. Compute Masked Attention:
-   Output = Softmax((Q * K^T + M) / sqrt(d)) * V
-```
-
----
-
-#### Priority Sampling 
-
-This method avoids the computationally expensive matrix inversion of LevAttention by using **Coordinated Sampling**. It selects keys based on their "energy" (squared norm) using a shared randomness source. This ensures that if a key is "heavy" (important), it is selected consistently across different views or distributed nodes without communication [Daliri et al., 2025].
-
-For each key $\mathbf{k}_i$, we generate a random hash $h_i \sim \text{Uniform}(0, 1)$. The priority rank $r_i$ is defined as the hash scaled by the key's energy:
-$$r_i = \frac{h_i}{\|\mathbf{k}_i\|_2^2}$$
-Keys with higher energy (large norms) get smaller ranks and are prioritized for selection.
-
-```latex
-Input: K (N x d), budget k, random seed s
-
-1. Generate Shared Randomness:
-   h_i ~ Uniform(0, 1) for i in 1..N (generated using seed s)
-
-2. Compute Ranks (Priority):
-   r_i = h_i / ||K_i||^2   // Lower rank = Higher priority
-
-3. Determine Threshold:
-   tau = (k+1)-th smallest value in r
-
-4. Select Keys:
-   S = {i | r_i <= tau}
-
-5. Compute Attention:
-   Output = Softmax((Q * K_S^T) / sqrt(d)) * V_S
-```
-
----
-
-#### L1 Lewis Weight Sampling
-
-This is a robust generalization of leverage scores. Instead of relying on the $L_2$ norm (which can be sensitive to outliers), it iteratively computes **$L_1$ Lewis Weights**. These weights provide a sensitivity measure for the $L_1$ norm, ensuring that the selected keys capture the geometry of the data distribution more robustly [Cohen & Peng, 2015].
-
-The weights $w$ are found via an iterative process. A weight $w_i$ for row $\mathbf{k}_i$ satisfies:
-$$w_i = \tau_i(\mathbf{W}^{-1/2}\mathbf{K})$$
-where $\mathbf{W}$ is the diagonal matrix of weights, and $\tau_i(\cdot)$ is the standard leverage score of the re-weighted matrix.
-
-```latex
-Input: K (N x d), iterations T
-
-1. Initialize Weights:
-   w_i = 1 for all i in 1..N
-
-2. Iterate T times:
-   a. Re-weight Matrix:
-      K_tilde = K / sqrt(w)
-   
-   b. Compute Leverage Scores of K_tilde:
-      tau = LeverageScores(K_tilde)
-   
-   c. Update Weights:
-      w = sqrt(w * tau)
-
-3. Select Keys:
-   S = {indices of largest w_i}
-
-4. Output: Attention Restricted to S
-```
+In one way or another, all of these methods are trying to make the models faster by leveraging properties of the matrix itself or the matrix multiplication. With that in mind, we wanted to experiment with several different types of attention mechanisms for low resource Indic languages and see how they perform across various tasks in terms of accuracy and what does the distribution of the attention matrices really look like for different modifications and hence we have conducted an exhaustice set of experiments;
 
 ### Experiment Setup
 
@@ -299,11 +218,19 @@ For the course of our experiments, we have picked the **DistilBERT** (6 encoder 
 
 <img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/distbert.drawio (1).png' | relative_url }}" alt="DistilBert">
 
-We have modified the attention mechanism to use  the aforementioned techniques 
+We have used DistilBert-Multilingual-Cased model available on hugging face (https://huggingface.co/distilbert/distilbert-base-multilingual-cased) trained on wikipedia dataset as our base model for all the tasks
 
-We have then used these models for fine-tuning and inference across several different tasks (more on this later).
+We then fine-tuned this model for various different tasks using our datasets and different attention mechanisms such as:
 
-We have used the **IndicGLUE Benchmark** (Hindi Language subsets), courtesy of [AI4Bharat](https://indicnlp.ai4bharat.org/pages/indic-glue/).
+* priority sampling
+* Leverage score based sampling
+* Lewis score based sampling
+* Learned sketches
+* vanilla fine tuning
+
+
+
+The datasets were taken from the  **IndicGLUE Benchmark** (Hindi Language subsets), courtesy of [AI4Bharat](https://indicnlp.ai4bharat.org/pages/indic-glue/).
 
 | Task & Dataset | Description | Unique Labels | Hindi Example |
 | :--- | :--- | :--- | :--- |
@@ -314,17 +241,218 @@ We have used the **IndicGLUE Benchmark** (Hindi Language subsets), courtesy of [
 | **Named Entity Recognition**<br>`wiki-ner.hi` | Tags entities like Persons, Locations, and Organizations in text. | `O`, `B-PER`, `I-PER`<br>`B-ORG`, `I-ORG`<br>`B-LOC`, `I-LOC` | *“**राहुल** (B-PER) **गांधी** (I-PER) **दिल्ली** (B-LOC) में हैं।”* |
 | **Section Title Prediction**<br>`wstp.hi` | Predicts the correct section title for a Wikipedia paragraph. | `0` (Title A)<br>`1` (Title B)<br>`2` (Title C)<br>`3` (Title D) | **Text:** (Paragraph about Cricket rules)<br>**Correct:** *“नियम” (Rules)* |
 
+All of the datasets were split into training and testing set and had a sequence lenght of 512
+
+Naturally, we wanted our matrices to be a good representation of our entire corpus and hence we kept the values of k to be in the ranges: [64,128,256]
+
+So for each of the dataset mentioned below, we have finetuned about 5 different models 
+
 All the models have been fine-tuned on Kaggle using the GPU P100 and are available for inference freely on Hugging Face.
+
+### Modified attention 
+
+ The goal here is not to come up with a one-size-fits-all solution but rather to find out how each of these perform in practice and the pitfalls (if any) for several of these algorithms.
+
+
+
+####  Learned Sketch
+
+Adapting the idea from linformer, the assumption here is that the attention matrix is low rank. Hence, instead of computing the entire $N \times N$ matrix, we take smaller versions of the projected Key ($\mathbf{K}$) and Value ($\mathbf{V}$) matrices. [Wang et al., 2020].
+
+Those smaller projection matrices are defined as $\mathbf{E} \in \mathbb{R}^{k \times N}$ and $\mathbf{F} \in \mathbb{R}^{k \times N}$, where $k \ll N$ such that
+
+$$\mathbf{K}_{proj} = \mathbf{E}\mathbf{K}, \quad \mathbf{V}_{proj} = \mathbf{F}\mathbf{V}$$
+
+```latex
+Input: Q (N x d), K (N x d), V (N x d)
+
+Compressed matrices
+   K_proj = E * K    (k x d)
+   V_proj = F * V    (k x d)
+
+Attention calculation
+   Scores = (Q * K_proj^T) / sqrt(d)    (N x k)
+
+weights
+   Weights = Softmax(Scores)
+
+Final product
+   Output = Weights * V_proj   (N x d)
+```
+
+
+
+**Leverage Scores based attention**
+
+This architecture is adopted from LevAttention, where Leverage scores are used to identify the most influential keys (rows of K), and we restrict attention computation to only these selected keys.
+Instead of applying this to vision-based tasks as in the original paper, we adapt this approach for natural language tasks.
+
+**Statistical Leverage Scores** are used here to identify the most "influential" keys in the sequence. High leverage indicates a key that is unique or critical to the subspace [Kannan et al., 2024].
+
+For a matrix $\mathbf{K} \in \mathbb{R}^{n \times d}$ with $n > d$ and full column rank, the statistical leverage score of the $i$-th row $\mathbf{k}_i$ is formally defined as:
+
+$$\tau_i(\mathbf{K}) = \mathbf{k}_i^\top (\mathbf{K}^\top \mathbf{K})^{-1} \mathbf{k}_i$$
+
+This corresponds to the $i$-th diagonal element of the projection matrix $\mathbf{P} = \mathbf{K}(\mathbf{K}^\top \mathbf{K})^{-1}\mathbf{K}^\top$, which projects onto the column space of $\mathbf{K}$ [Drineas et al., 2012; Mahoney et al., 2011]. The leverage scores satisfy $0 \leq \tau_i \leq 1$ and $\sum_{i=1}^n \tau_i = d$, providing a natural probability distribution over the rows of $\mathbf{K}$.
+
+For a matrix $\mathbf{K} \in \mathbb{R}^{N \times d}$, the leverage score $\tau_i$ of the $i$-th row $\mathbf{k}_i$ is defined as:
+$$\tau_i(\mathbf{K}) = \mathbf{k}_i (\mathbf{K}^\top \mathbf{K})^{-1} \mathbf{k}_i^\top$$
+
+
+
+```latex
+K (N x d), Q (N x d), V (N x d), budget k, damping (for stability) lambda
+
+Leverage Scores for K:
+   G = K^T * K + lambda * I
+   G_inv = inverse(G)
+   For each row i in K:
+       tau_i = K_i * G_inv * K_i^T
+
+Universal Set U calculation:
+   U = {indices of the top-k largest tau_i}
+
+Attention Mask M:
+   M = matrix of -infinity (N x N)
+   For all query positions i and key positions j:
+       if j in U: M[i,j] = 0
+       else: M[i,j] = -infinity
+
+Attention:
+   attention_scores = (Q * K^T) / sqrt(d) + M
+   attention_weights = softmax(attention_scores)
+   output = attention_weights * V
+```
+
+#### L1 weights based attention
+
+We have also tried to use Lewis weights for the key selection instead of Leverage scores for the attention mechanism.
+
+Lewis Weights are a generalization of leverage scores for $\ell_1$ norms. They provide a sensitivity measure for the $\ell_1$ norm, ensuring that the selected keys capture the geometry of the data distribution more robustly [Cohen & Peng, 2015].
+
+For a matrix $\mathbf{K} \in \mathbb{R}^{n \times d}$, the $\ell_1$ Lewis weights $w_i$ are defined as the unique values satisfying:
+$$w_i = \tau_i(\mathbf{W}^{-1/2}\mathbf{K})$$
+where $\mathbf{W} = \text{diag}(w_1, \ldots, w_n)$ is the diagonal weight matrix, and $\tau_i(\cdot)$ denotes the standard $\ell_2$ leverage score of the re-weighted matrix. 
+
+We are using
+``` latex
+Input: K (N x d), Q (N x d), V (N x d)
+
+Compute L1 Lewis Weights for K:
+   Initialize: w_i = 1 for all i
+   Iterate T times:
+      K_tilde = K / sqrt(w)
+      tau = LeverageScores(K_tilde)  
+      w = sqrt(w * tau)
+   S = {indices of largest w_i}
+
+ Create Mask for Attention:
+   M[i,j] = 0 if j in S else -inf
+
+Compute Attention with Mask:
+   attention_scores = (Q * K^T) / sqrt(d) + M
+   attention_weights = softmax(attention_scores)
+   output = attention_weights * V
+
+```
+
+
+#### Priority Sampling 
+
+Here we are using adapting the priority sampling algorithm for distilbert.
+
+We select the key vectors probabilistically, where the probability of selecting a key is proportional to its squared norm, using a threshold derived from the squared Frobenius norm of the key matrix [Daliri et al., 2025].
+
+More formally,
+
+Let \(\mathbf{ K} \in \mathbb{R}^{k\_len \times d} \) be the key matrix for a given head.
+
+ The squared Frobenius norm of the key matrix is given by:
+    \[
+    \mathbf{A_{\text{norm}}^2 }= \|\mathbf{K}\|_F^2 = \sum_{i=1}^{k\_len} \|\mathbf{k}_i\|_2^2
+    \]
+
+For a target sample size \( k \), the threshold \( \tau \) is:
+    \[
+    \tau = \frac{k}{\mathbf{A_{\text{norm}}^2}}
+    \]
+
+ For each key vector \( \mathbf{k}_i \), generate a random hash \( h_i \sim \text{Uniform}(0, 1) \). The key is selected if:
+    \[
+    h_i \leq \tau \cdot \|\mathbf{k}_i\|_2^2
+    \]
+
+```latex
+Input: K (N x d), k, random seed s
+
+Generate Shared Randomness:
+   h_i ~ Uniform(0, 1) for i in 1..N 
+
+Compute Ranks :
+   r_i = h_i / ||K_i||^2   // Lower rank = Higher priority
+
+Determine Threshold:
+   tau = (k+1)-th smallest value in r
+
+Select Keys:
+   S = {i | r_i <= tau}
+
+Attention:
+   Output = Softmax((Q * K_S^T) / sqrt(d)) * V_S
+```
+
 
 ### Results
 
-Looking at the experiments and the attention mechanism, it is clear that there is some speedup while maintaining accuracy. However, that fails when we talk about more complex tasks
+Looking at the experiments and the attention mechanism, it is clear that there is some speedup while maintaining accuracy. However, interesting thing to note is that the benifits offered by the modifications are not uniform across all the tasks suggesting either the need for optimizing the code further or looking for alternative ways to make the methods work for more complex tasks
 
-<div class="row mt-3">
-    <div class="col-sm mt-3 mt-md-0">
-        <img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/attention_accuracy.png' | relative_url }}" alt="accuracy">
-    </div>
-    <div class="col-sm mt-3 mt-md-0">
-        <img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/corrected_time_diff_heatmap.png' | relative_url }}" alt="time_difference">
-    </div>
+
+###### Sentiment Analysis
+
+A good idea to see how is our model predicting is using saliency plots
+<div class="layout-seq">
+<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_vanilla/inference_vanilla/prediction_dashboard_Instance_Analysis.png"> <p>Vanilla Attention</p></div>
+<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_priority/inference_priority_sampling/prediction_dashboard_Instance_Analysis.png"> <p>Priority Sampling</p></div>
+<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_levattention/inference_levattention/prediction_dashboard_Instance_Analysis.png"> <p>Levattention</p></div>
+<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_learnedsketch/inference_learned_sketch/prediction_dashboard_Instance_Analysis.png"> <p>Learned Sketch</p></div>
+<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_l1_attention/inference_l1/prediction_dashboard_Instance_Analysis.png"> <p>L1 attention</p></div>
 </div>
+
+Let us also check the data distribution for the attention mechanism
+<div class="layout-seq">
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_vanilla/inference_vanilla/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Vanilla Attention</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_priority/inference_priority_sampling/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Priority Sampling</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_levattention/inference_levattention/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Levattention</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_learnedsketch/inference_learned_sketch/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Learned Sketch</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_l1_attention/inference_l1/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>L1 attention</p>
+  </div>
+</div>
+
+###### NER
+
+###### WSTP
+
+###### NLI
+
+###### Discourse
+
+##### Comparing accuracies across tasks 
+<img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/attention_accuracy.png' | relative_url }}" alt="Accuracy">
+
+##### Comparing the inference across tasks
+<img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/corrected_time_diff_heatmap.png' | relative_url }}" alt="Time Spent">
+
