@@ -1,0 +1,2 @@
+total_inference_time_s,avg_batch_time_s,samples_per_second,emissions_kg_co2,overall_precision,overall_recall,overall_f1,overall_accuracy,avg_peak_memory_gb,total_samples
+1.4488399028778076,0.0183397456060482,866.9004749974288,0.011617250960643545,0.8488975356679637,0.8838622552329507,0.866027125372147,0.9390190656381895,0.783277469345286,1256

@@ -62,7 +62,8 @@ _styles: |
     text-align: center;
     font-size: 16px;
   }
-  /* --- New Grid Layouts --- */
+  
+  /* --- Shared Settings for Grids --- */
   .layout-seq, .layout-3-2 {
     display: flex;
     flex-wrap: wrap;
@@ -87,16 +88,40 @@ _styles: |
     margin-top: 5px;
     text-align: center;
   }
-  /* 5 items in a row */
+  /* Grid 1: 5 items in a row */
   .layout-seq > div {
     flex: 1 1 18%;
   }
-  /* 3 top, 2 bottom */
+  /* Grid 2: 3 top, 2 bottom */
   .layout-3-2 > div:nth-child(-n+3) {
     flex: 1 1 30%;
   }
   .layout-3-2 > div:nth-child(n+4) {
     flex: 1 1 45%;
+  }
+
+  /* --- NEW: Vertical Sequential Layout --- */
+  .layout-vertical {
+    display: flex;
+    flex-direction: column; /* Stacks items vertically */
+    gap: 40px;              /* Space between plots */
+    margin: 30px 0;
+  }
+  .layout-vertical > div {
+    width: 100%;            /* Forces full width */
+    text-align: center;
+  }
+  .layout-vertical img {
+    width: 100%;            /* Image fills the container */
+    height: auto;
+    border-radius: 6px;
+    border: 1px solid rgba(0,0,0,0.1); /* Optional frame */
+  }
+  .layout-vertical p {
+    font-family: monospace;
+    font-size: 1.1em;       /* Slightly larger text for headers */
+    color: #888;
+    margin-top: 10px;
   }
 ---
 
@@ -139,7 +164,7 @@ For the approximation $\tilde{\mathbf{C}}$ to be accurate, the sketching matrix 
 #### Sketching and Sampling
 
 The sketches can be of various types, e.g., Gaussian, Count Sketch, Hadamard, and Learned sketches.
-* **Gaussian sketches** involve projecting data using a matrix where entries are sampled independently from a normal distribution $\mathcal{N}(0, \frac{1}{k})$ to preserve distances [Sobczyk and Luisier, 2022].
+* **Gaussian sketches** involve projecting data using a matrix where entries are sampled independently from a normal distribution $\mathcal{N}(0, \frac{1}{k})$ to preserve distances [Sobczyk and Luisier, 2022].<d-cite key="sobczyk2022approximate"></d-cite>
 * **Count Sketch** offers a sparser alternative by using hash functions to map rows to buckets and randomly flipping their signs [Clarkson and Woodruff, 2017].
 * **Hadamard-based sketches** (like the PHD matrix) combine randomized Hadamard transforms with uniform subsampling for structured efficiency [Clarkson and Woodruff, 2017].
 
@@ -240,6 +265,9 @@ The datasets were taken from the  **IndicGLUE Benchmark** (Hindi Language subset
 | **Causal Reasoning (COPA)**<br>`copa.hi` | Selects the most plausible cause or effect for a given premise. | `0` (Choice 1)<br>`1` (Choice 2) | **Premise:** *“लड़के का पैर फिसल गया।”*<br>**Correct:** *“वह गिर गया।”* |
 | **Named Entity Recognition**<br>`wiki-ner.hi` | Tags entities like Persons, Locations, and Organizations in text. | `O`, `B-PER`, `I-PER`<br>`B-ORG`, `I-ORG`<br>`B-LOC`, `I-LOC` | *“**राहुल** (B-PER) **गांधी** (I-PER) **दिल्ली** (B-LOC) में हैं।”* |
 | **Section Title Prediction**<br>`wstp.hi` | Predicts the correct section title for a Wikipedia paragraph. | `0` (Title A)<br>`1` (Title B)<br>`2` (Title C)<br>`3` (Title D) | **Text:** (Paragraph about Cricket rules)<br>**Correct:** *“नियम” (Rules)* |
+
+
+
 
 All of the datasets were split into training and testing set and had a sequence lenght of 512
 
@@ -401,6 +429,16 @@ Attention:
    Output = Softmax((Q * K_S^T) / sqrt(d)) * V_S
 ```
 
+ This is what the structure for our training and inference models look like. For each task, we have fine-tuned 5 different attention models as given below and have used different types of attention methods for inference as well. The following table highlights the pair of attentions used for fine-tuneing and the corresponding pairs used for inference
+ 
+
+| Training Model (Fine-tuned) ↓ \ Inference Method → | Vanilla Attention | Priority Sampling | Learned Sketch | LevAttention |
+| :--- | :---: | :---: | :---: | :---: |
+| **Vanilla Attention** | ✅ | ✅ | ✅ | ✅ |
+| **Priority Sampling** | ✅ | ✅ | ✅ | ✅ |
+| **Learned Sketch** | ✅ | ✅ | ✅ | ✅ |
+| **L1 Attention** | ✅ | ✅ | ✅ | ✅ |
+| **LevAttention** | ✅ | ✅ | ✅ | ✅ |
 
 ### Results
 
@@ -409,17 +447,71 @@ Looking at the experiments and the attention mechanism, it is clear that there i
 
 ###### Sentiment Analysis
 
-A good idea to see how is our model predicting is using saliency plots
-<div class="layout-seq">
-<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_vanilla/inference_vanilla/prediction_dashboard_Instance_Analysis.png"> <p>Vanilla Attention</p></div>
-<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_priority/inference_priority_sampling/prediction_dashboard_Instance_Analysis.png"> <p>Priority Sampling</p></div>
-<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_levattention/inference_levattention/prediction_dashboard_Instance_Analysis.png"> <p>Levattention</p></div>
-<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_learnedsketch/inference_learned_sketch/prediction_dashboard_Instance_Analysis.png"> <p>Learned Sketch</p></div>
-<div><img src="assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_l1_attention/inference_l1/prediction_dashboard_Instance_Analysis.png"> <p>L1 attention</p></div>
+The task here was to classify the sentences into one of the three given labels.
+<div style="font-family: 'Segoe UI', sans-serif; border: 1px solid #e1e4e8; border-radius: 8px; overflow: hidden; max-width: 600px; margin-bottom: 25px;">
+  
+  <div style="background-color: #f6f8fa; padding: 12px 16px; border-bottom: 1px solid #e1e4e8; font-size: 12px; font-weight: 600; color: #57606a; text-transform: uppercase; display: flex; justify-content: space-between;">
+    <span>Input Text</span>
+    <span>Predicted Label</span>
+  </div>
+
+  <div style="padding: 12px 16px; border-bottom: 1px solid #eaecef; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">
+    <div style="font-size: 15px; color: #24292e; padding-right: 15px;">और खुश भी है।</div>
+    <div style="background-color: #dafbe1; color: #1a7f37; border: 1px solid rgba(26, 127, 55, 0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; white-space: nowrap;">
+      <span style="margin-right: 6px;">Positive</span><span>▲</span>
+    </div>
+  </div>
+
+  <div style="padding: 12px 16px; border-bottom: 1px solid #eaecef; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">
+    <div style="font-size: 15px; color: #24292e; padding-right: 15px;">दानिश बड़ा होता है।</div>
+    <div style="background-color: #f6f8fa; color: #57606a; border: 1px solid rgba(87, 96, 106, 0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; white-space: nowrap;">
+      <span style="margin-right: 6px;">Neutral</span><span>•</span>
+    </div>
+  </div>
+
+  <div style="padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; background-color: #fff;">
+    <div style="font-size: 15px; color: #24292e; padding-right: 15px;">लंबे समय तक अटकी रही।</div>
+    <div style="background-color: #ffebe9; color: #cf222e; border: 1px solid rgba(207, 34, 46, 0.2); padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; white-space: nowrap;">
+      <span style="margin-right: 6px;">Negative</span><span>▼</span>
+    </div>
+  </div>
+
 </div>
 
-Let us also check the data distribution for the attention mechanism
-<div class="layout-seq">
+
+
+A good idea to see how is our model predicting is using saliency plots. This is a relatively simple task which requires the model to understand the data
+
+<div class="layout-vertical">
+  
+  <div>
+    <img src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_vanilla/inference_vanilla/prediction_dashboard_Instance_Analysis.png' | relative_url }}">
+    <p>1. Vanilla Attention</p>
+  </div>
+
+  <div>
+    <img src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_priority/inference_priority_sampling/prediction_dashboard_Instance_Analysis.png' | relative_url }}">
+    <p>2. Priority Sampling</p>
+  </div>
+
+  <div>
+    <img src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_levattention/inference_levattention/prediction_dashboard_Instance_Analysis.png' | relative_url }}">
+    <p>3. LevAttention</p>
+  </div>
+
+  <div>
+    <img src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_l1_attention/inference_l1/prediction_dashboard_Instance_Analysis.png' | relative_url }}">
+    <p>4. L1 attention</p>
+  </div>
+  <div>
+    <img src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_learnedsketch/inference_learned_sketch/prediction_dashboard_Instance_Analysis.png' | relative_url }}">
+    <p>5. Learned Sketch</p>
+  </div>
+  
+  </div>
+
+Let us also check the attentiion head's distribution for the attention mechanism
+<div class="layout-vertical">
   <div>
     <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/sentiment_analysis/trained_vanilla/inference_vanilla/attention_histograms_Global_Dist.png' | relative_url }}">
     <p>Vanilla Attention</p>
@@ -442,17 +534,399 @@ Let us also check the data distribution for the attention mechanism
   </div>
 </div>
 
+Looking at these, it is pretty clear that L1 and Priority based attention mechanism follow the vanilla most closely. Learned is the farthest from the original distribution. It could be due to the way we initalize the projection matrices.
+
+
+
+| Trained_Attn   | Inference_Attn   |   Accuracy |
+|:-------------------|:---------------|:-----------------|
+| l1_attention   | levattention     |      0.565 |
+ | l1_attention   | l1               |      0.565 |
+| l1_attention   | vanilla          |      0.565 |
+ | levattention   | vanilla          |      0.539 |
+| levattention   | l1               |      0.539 |
+
+Thus, the best attention mechanism for this task is likely L1 or Leverage score based sampling
+
+Another interesting thing to note is that they have taken more time in training and inference as compared to the others
+
+In terms of time, priority is the best
+
+Given below is the table which contains the best performing training and inference attention method for sentiment analysis
+
 ###### NER
 
+For NER, the task here was to categorize the parts of sentences after identifying them. Given below is what the example for NER sentence in our dataset looks like
+
+<div style="font-family: sans-serif; line-height: 1.8; overflow-x: auto; white-space: nowrap; padding: 10px; border: 1px solid #e0e0e0; border-radius: 5px; background: #f9f9f9;"><span style="margin: 0 2px; color: #333;">जिंदगी</span><span style="margin: 0 2px; color: #333;">एक</span><span style="margin: 0 2px; color: #333;">रिहर्सल</span><span style="background-color: #FFD1DC; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>विष्णु</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">B-PER</span></span><span style="background-color: #FFD1DC; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>प्रभाकर</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">I-PER</span></span><span style="margin: 0 2px; color: #333;">द्वारा</span><span style="margin: 0 2px; color: #333;">रचित</span><span style="margin: 0 2px; color: #333;">कहानी</span><span style="margin: 0 2px; color: #333;">संग्रह</span><span style="margin: 0 2px; color: #333;">है।</span></div>
+<br>
+
+
+<div style="font-family: sans-serif; line-height: 1.8; overflow-x: auto; white-space: nowrap; padding: 10px; border: 1px solid #e0e0e0; border-radius: 5px; background: #f9f9f9;"><span style="background-color: #AEC6CF; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>न्यूटन</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">B-ORG</span></span><span style="background-color: #AEC6CF; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>का</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">I-ORG</span></span><span style="background-color: #AEC6CF; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>शीतलन</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">I-ORG</span></span><span style="background-color: #AEC6CF; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>का</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">I-ORG</span></span><span style="background-color: #AEC6CF; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>नियम</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">I-ORG</span></span></div>
+<br>
+
+
+<div style="font-family: sans-serif; line-height: 1.8; overflow-x: auto; white-space: nowrap; padding: 10px; border: 1px solid #e0e0e0; border-radius: 5px; background: #f9f9f9;"><span style="background-color: #C1E1C1; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>अण्टीगुआ</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">B-LOC</span></span><span style="background-color: #C1E1C1; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>और</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">I-LOC</span></span><span style="background-color: #C1E1C1; color: #333; padding: 4px 6px; border-radius: 6px; margin: 0 3px; display: inline-block;"><strong>बारबूडा</strong> <span style="font-size: 0.75em; opacity: 0.7; font-family: monospace;">I-LOC</span></span></div>
+<br>
+
+
+
+
+  *Attention heads Distribution Plots*
+<div class="layout-vertical">
+   <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_vanilla/inference_vanilla/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Vanilla</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_priority/inference_priority_sampling/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Priority Sampling</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_levattention/inference_levattention/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Levattention</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_learnedsketch/inference_learned_sketch/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Learned Sketch</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_l1_attention/inference_l1/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>L1 attention</p>
+  </div>
+</div>
+
+
+*NER Tags*
+<div class="layout-vertical">
+   <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_vanilla/inference_vanilla/ner_confidence_wrapped_.png' | relative_url }}">
+    <p>Vanilla</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_priority/inference_priority_sampling/ner_confidence_wrapped_.png' | relative_url }}">
+    <p>Priority Sampling</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_levattention/inference_levattention/ner_confidence_wrapped_.png' | relative_url }}">
+    <p>Levattention</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_learnedsketch/inference_learned_sketch/ner_confidence_wrapped_.png' | relative_url }}">
+    <p>Learned Sketch</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/ner/trained_l1_attention/inference_l1/ner_confidence_wrapped_.png' | relative_url }}">
+    <p>L1 attention</p>
+  </div>
+</div>
+
+
+
+| Trained_Attn   | Inference_Attn   |   Accuracy |
+|:-------------------|:---------------|:-----------------|
+| priority       | vanilla          |      0.944 |
+| priority       | l1               |      0.944 |
+| priority       | levattention     |      0.944 |
+| levattention   | vanilla          |      0.941 |
+| l1_attention   | vanilla          |      0.941 |
+
+Unsurprisingly, learned sketch performed worse as compared to the other methods here as well. Priority sampling performed the best in terms of accuracy and time and likely could be a better choice for tasks like these as compared to the other methods
+
+Interestingly enough, this task benifits a lot from the optimized attention mechanism
+
+Given below is table which shows the best performing training and inference attention pair for NER
+
 ###### WSTP
+Taken from the wikipedia dataset, we used our models to predict the title of the given text. Since this is multiple choice, it is one of the more complex tasks
+
+<div style="font-family: sans-serif; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; margin-bottom: 30px; background-color: white; box-shadow: 0 2px 5px rgba(0,0,0,0.05);">
+  
+  <div style="color: #888; font-size: 12px; font-weight: bold; text-transform: uppercase; margin-bottom: 10px;">
+    Sample 1
+  </div>
+
+  <div style="font-size: 16px; line-height: 1.6; color: #333; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid #eee;">
+    उन्होंने सबसे पहले ब्रिटिश राज के दौरान पूर्ण स्वराज की मांग उठाई। लोकमान्य तिलक ने जनजागृति का कार्यक्रम पूरा करने के लिए महाराष्ट्र में गणेश उत्सव तथा शिवाजी उत्सव सप्ताह भर मनाना प्रारंभ किया। इन त्योहारों के माध्यम से जनता में देशप्रेम और अंग्रेजों के अन्यायों के विरुद्ध संघर्ष का साहस भरा गया।
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+    
+  <div style="background-color: #f7fafc; border: 1px solid #cbd5e0; color: #4a5568; padding: 10px 15px; border-radius: 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+      <span><span style="opacity: 0.6; margin-right: 8px;">A</span> भारतीय राष्ट्रीय कांग्रेस</span>
+    </div>
+
+  <div style="background-color: #f7fafc; border: 1px solid #cbd5e0; color: #4a5568; padding: 10px 15px; border-radius: 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+      <span><span style="opacity: 0.6; margin-right: 8px;">B</span> राजनीतिक यात्रा</span>
+    </div>
+
+  <div style="background-color: #f7fafc; border: 1px solid #cbd5e0; color: #4a5568; padding: 10px 15px; border-radius: 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+      <span><span style="opacity: 0.6; margin-right: 8px;">C</span> माण्डले में कारावास</span>
+    </div>
+
+  <div style="background-color: #e6fffa; border: 1px solid #38b2ac; color: #234e52; font-weight: bold; padding: 10px 15px; border-radius: 6px; font-size: 14px; display: flex; justify-content: space-between; align-items: center;">
+    <span><span style="opacity: 0.6; margin-right: 8px;">D</span> सामाजिक योगदान और विरासत</span>
+      <span>&#10003;</span>
+    </div>
+
+  </div>
+</div>
+
+*Attention Heads Distribution Plots*
+<div class="layout-vertical">
+   <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/wstp/trained_vanilla/inference_vanilla/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Vanilla</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/wstp/trained_priority/inference_priority_sampling/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Priority Sampling</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/wstp/trained_levattention/inference_levattention/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Levattention</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/wstp/trained_learnedsketch/inference_learned_sketch/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Learned Sketch</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/wstp/trained_l1_attention/inference_l1/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>L1 attention</p>
+  </div>
+</div>
+
+This is the task where our modifed attention took a lot more time as compared to the vanilla mechanism which likely means that similar tasks will not be benifitted from optimizing attention here
+
+Given below is the table which talks about the top inference and training attention pair in terms of accuracy
+
+| Trained_Attn   | Inference_Attn   |   Accuracy |
+|:---------------|:-----------------|-----------:|
+| levattention   | vanilla          |      0.714 |
+| levattention   | l1               |      0.714 |
+| levattention   | levattention     |      0.714 |
+| vanilla        | vanilla          |      0.71  |
+| vanilla        | levattention     |      0.71  |
+
+However, out of all of the attention mechanism, the lev attention took the least amount of time and hence in terms of time and accuracy, lev attention is the better choice for more complex tasks. 
 
 ###### NLI
 
+NLI is also taken up from the AI4Bharat series of datasets. Here, we look at the given text called premise and try to identify the cause and the effect relationship
+
+<div style="font-family: sans-serif; max-width: 700px;">
+
+  <div style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); background: white;">
+    <div style="background-color: #fffbeb; border-bottom: 1px solid #fcd34d; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center;">
+      <span style="color: #d97706; font-weight: 800; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;">Find the CAUSE</span>
+      <span style="font-size: 16px;"></span>
+    </div>
+    <div style="padding: 25px; text-align: center; border-bottom: 1px solid #f3f4f6;">
+      <div style="font-size: 11px; color: #9ca3af; margin-bottom: 8px; text-transform: uppercase; font-weight: 600;">Premise</div>
+      <div style="font-size: 18px; font-weight: 500; color: #1f2937; line-height: 1.5;">मेरे शरीर ने घास पर छाया डाली।</div>
+    </div>
+    <div style="display: flex; flex-direction: row;">
+      <div style="flex: 1; padding: 20px; background-color: #ecfdf5; border-right: 1px solid #e5e7eb; opacity: 1.0;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #064e3b;">
+          <span style="font-size: 11px; font-weight: bold;">OPTION 1</span>
+          <span style="font-weight: bold; font-size: 16px;">&#10003;</span>
+        </div>
+        <div style="font-size: 14px; color: #064e3b; font-weight: bold; line-height: 1.5;">सूरज उग रहा था।</div>
+      </div>
+      <div style="flex: 1; padding: 20px; background-color: #f9fafb;  opacity: 0.6;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #9ca3af;">
+          <span style="font-size: 11px; font-weight: bold;">OPTION 2</span>
+          <span style="font-weight: bold; font-size: 16px;"></span>
+        </div>
+        <div style="font-size: 14px; color: #9ca3af; font-weight: normal; line-height: 1.5;">घास काटी गई।</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); background: white;">
+    <div style="background-color: #eff6ff; border-bottom: 1px solid #bfdbfe; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center;">
+      <span style="color: #2563eb; font-weight: 800; font-size: 12px; letter-spacing: 1px; text-transform: uppercase;">Find the EFFECT</span>
+      <span style="font-size: 16px;"></span>
+    </div>
+    <div style="padding: 25px; text-align: center; border-bottom: 1px solid #f3f4f6;">
+      <div style="font-size: 11px; color: #9ca3af; margin-bottom: 8px; text-transform: uppercase; font-weight: 600;">Premise</div>
+      <div style="font-size: 18px; font-weight: 500; color: #1f2937; line-height: 1.5;">चिकित्सक ने मरीज को गलत बताया।</div>
+    </div>
+    <div style="display: flex; flex-direction: row;">
+      <div style="flex: 1; padding: 20px; background-color: #ecfdf5; border-right: 1px solid #e5e7eb; opacity: 1.0;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #064e3b;">
+          <span style="font-size: 11px; font-weight: bold;">OPTION 1</span>
+          <span style="font-weight: bold; font-size: 16px;">&#10003;</span>
+        </div>
+        <div style="font-size: 14px; color: #064e3b; font-weight: bold; line-height: 1.5;">मरीज ने चिकित्सक के खिलाफ कदाचार का मुकदमा दायर किया।</div>
+      </div>
+      <div style="flex: 1; padding: 20px; background-color: #f9fafb;  opacity: 0.6;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px; color: #9ca3af;">
+          <span style="font-size: 11px; font-weight: bold;">OPTION 2</span>
+          <span style="font-weight: bold; font-size: 16px;"></span>
+        </div>
+        <div style="font-size: 14px; color: #9ca3af; font-weight: normal; line-height: 1.5;">मरीज ने चिकित्सक को गोपनीय जानकारी दी।</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+*Attention Head Distribution Plots*
+<div class="layout-vertical">
+   <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/copa_hindi/trained_vanilla/inference_vanilla/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Vanilla</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/copa_hindi/trained_priority/inference_priority_sampling/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Priority Sampling</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/copa_hindi/trained_levattention/inference_levattention/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Levattention</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/copa_hindi/trained_learnedsketch/inference_learned_sketch/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Learned Sketch</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/copa_hindi/trained_l1_attention/inference_l1/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>L1 attention</p>
+  </div>
+</div>
+
+Given below is  the table for accuracy and the type of the attention model used for training and inference
+
+| Trained_Attn   | Inference_Attn    |   Accuracy |
+|:---------------|:------------------|-----------:|
+| vanilla        | priority_sampling |      0.563 |
+| levattention   | priority_sampling |      0.563 |
+| l1_attention   | learned_sketch    |      0.528 |
+| priority       | vanilla           |      0.526 |
+| priority       | l1                |      0.526 |
+
+Priority comes out as a better choice in terms of time and inference for tasks similar to NLI
+
 ###### Discourse
 
+With discourse we are trying to understand the sementics of a sentence and the the type of the sentence
+
+<div style="font-family: sans-serif; max-width: 700px; border: 1px solid #e0e0e0; border-radius: 8px; overflow: hidden; margin-bottom: 30px;">
+  
+  <div style="background: #fcfcfc; padding: 10px 15px; border-bottom: 1px solid #eee; color: #888; font-size: 11px; font-weight: bold; letter-spacing: 1px; text-transform: uppercase;">
+   
+  </div>
+
+  <div style="padding: 15px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; background-color: #fff;">
+    <div style="font-size: 15px; line-height: 1.6; color: #333; width: 75%;">एक कबूतर पंख फडफ़ड़ाता हुआ कहवाख़ाने के अन्दर आया और कुछ लोग मिलकर उसे बाहर निकालने की कोशिश करने लगे।</div>
+    <div style="background-color: #e3f2fd; color: #0d47a1; border: 1px solid #90caf9; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; display: flex; align-items: center;">
+      <span style="margin-right: 6px;">Narrative</span><span>📖</span>
+    </div>
+  </div>
+
+  <div style="padding: 15px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; background-color: #fff;">
+    <div style="font-size: 15px; line-height: 1.6; color: #333; width: 75%;">हर महीने दस दस के पाँच नोट वो अपने ख़फ़ीफ़ तौर पर काँपते हुए हाथों से पकड़ता और अपने पुराने वज़ा के लंबे कोट की अंदरूनी जेब में रख लेता।</div>
+    <div style="background-color: #f3e5f5; color: #4a148c; border: 1px solid #ce93d8; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; display: flex; align-items: center;">
+      <span style="margin-right: 6px;">Descriptive</span><span>👁️</span>
+    </div>
+  </div>
+
+  <div style="padding: 15px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; background-color: #fff;">
+    <div style="font-size: 15px; line-height: 1.6; color: #333; width: 75%;">आख़िर शरीफ़ ख़ान-दान से तअल्लुक़ है ”</div>
+    <div style="background-color: #fce4ec; color: #880e4f; border: 1px solid #f48fb1; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; display: flex; align-items: center;">
+      <span style="margin-right: 6px;">Dialogue</span><span>💬</span>
+    </div>
+  </div>
+
+</div>
+
+
+*Attention Heads Distribution Plots*
+<div class="layout-vertical">
+   <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_vanilla/inference_vanilla/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Vanilla</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_priority/inference_priority_sampling/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Priority Sampling</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_levattention/inference_levattention/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Levattention</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_learnedsketch/inference_learned_sketch/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>Learned Sketch</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_l1_attention/inference_l1/attention_histograms_Global_Dist.png' | relative_url }}">
+    <p>L1 attention</p>
+  </div>
+</div>
+
+*Saliency Plots*
+<div class="layout-vertical">
+   <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_vanilla/inference_vanilla/saliency_class4_Discourse_Saliency.png' | relative_url }}">
+    <p>Vanilla</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_priority/inference_priority_sampling/saliency_class4_Discourse_Saliency.png' | relative_url }}">
+    <p>Priority Sampling</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_levattention/inference_levattention/saliency_class4_Discourse_Saliency.png' | relative_url }}">
+    <p>Levattention</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_learnedsketch/inference_learned_sketch/saliency_class1_Discourse_Saliency.png' | relative_url }}">
+    <p>Learned Sketch</p>
+  </div>
+  <div>
+    <img class="rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_l1_attention/inference_l1/saliency_class4_Discourse_Saliency.png' | relative_url }}">
+    <p>L1 attention</p>
+  </div>
+</div>
+
+<img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/discourse/trained_vanilla/inference_vanilla/discourse_dashboard_Mode_Probabilities.png' | relative_url }}" alt="dashboard marker">
+
+
+Given below are the inference and training attention pairs which are best performing for the given task
+
+
+| Trained_Attn   | Inference_Attn   |   Accuracy |
+|:---------------|:-----------------|-----------:|
+| levattention   | vanilla          |      0.794 |
+| levattention   | l1               |      0.794 |
+| levattention   | levattention     |      0.794 |
+| l1_attention   | levattention     |      0.794 |
+| l1_attention   | l1               |      0.794 |
+
+Learned sketch performed poorly here as well. For tasks similar to discourse, using a vanilla fine-tuned model and using other models for inference is a better idea. Using priority sampling based attention is also a good idea for these
+
+There is no one-sized fits all method really as we can see. However, there are some methods which on average are better than the others let us look at them and compare the accuracies and the time taken for each of these
+
 ##### Comparing accuracies across tasks 
-<img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/attention_accuracy.png' | relative_url }}" alt="Accuracy">
+
+<img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/attention_accuracy.png' | relative_url }}" alt="dashboard marker">
+
+As you can see, in terms of accuracy, for simpler tasks all of the methods except learned sketch achieve good accuracy, one of the reasons for that could be the fact that the dimensions that we are sketching for could be too little to capture the nuances effectively. However, if we were to increase the dimensions then it would take significantly more time and would not achieve the promised speedup. An interesting experiment would be to reproduce this on a larger dataset with a heavier model to see if there are more speedups as compared to DistilBert architecture
+
+Levattention is a method which consistently matches the accuracy given by vanilla attention. For simpler tasks, all of the attention mechanisms seem to give satisfactory results but for tasks which are complex, L1 and Leverage score based attention mechanisms outperform everyone else
 
 ##### Comparing the inference across tasks
 <img class="img-fluid rounded" src="{{ 'assets/img/2026-04-27-fastermatrices/corrected_time_diff_heatmap.png' | relative_url }}" alt="Time Spent">
 
+In terms of the time taken here, this graph shows the change in the percentage time per attention as compared to the vanilla.
+
+As accurate as leverage score based sampling is, it seems to take even more time than vanilla based attention mechanism. One of the reasons for that could be the leverage score calculation; We are yet to explore more efficient ways to calculate leverage scores. Since we are applying the leverage scores based selection only for keys, it might be the case that we need to apply it either for values or the query matrix. To utilize the full potential of this method, another interesting thing would be to also look at sharing the leverage scores across the layers and the head
+
+Priority sampling is a promising method as it provides speedup for simpler tasks yet it retains considerable accuracy as compared to the other methods. 
+
+In terms of time, L1 sampling based attention is also not far behind Leverage score based sampling and hence we need to look more into the optimization of these mechanisms to better suit the architectures.
+
+Learned sketch offers very promising results in terms of time but the accuracy stagnates across the epoch suggesting some errors with the implementation. Regardless, the sketching based mechanisms offer greater time speedup
+
+In order to reap the full benifits of these methods, inputs with larger context lenght should be considered which is where they will give considerable speedup
